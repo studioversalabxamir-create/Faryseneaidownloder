@@ -1,0 +1,107 @@
+# Python bytecode and caches
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+
+# Build and packaging
+build/
+dist/
+*.egg-info/
+.eggs/
+
+# Type checkers and test caches
+.mypy_cache/
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Virtual environments (do not commit venvs)
+.venv/
+venv/
+env/
+myenv/
+spleeter_venv/
+spleeter-env/
+
+# IDE/editor settings
+.vscode/
+.idea/
+.vs/
+*.code-workspace
+
+# OS files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Logs
+logs/
+*.log
+
+# Node/npm
+node_modules/
+package-lock.json
+
+# Runtime databases and caches
+*.db
+*.db-*
+*.db.bak
+bot_cache*.db*
+old_bot_cache.db
+.cache/
+
+# Media and large binary artifacts
+cache/
+downloads/
+daily_songs/
+instaloader_sessions/
+pretrained_models/
+Font/
+templates/cache/
+
+# Common media extensions (avoid committing downloaded/generated media)
+*.mp3
+*.mp4
+*.m4a
+*.webm
+*.wav
+*.ogg
+*.opus
+*.flac
+*.aac
+*.mkv
+*.avi
+*.mov
+
+# Images and temp assets often produced by handlers
+*.jpg
+*.jpeg
+*.png
+*.gif
+*.webp
+*.tmp
+*.part
+
+# Environment and secrets
+.env
+*.env
+cookies*
+*cookie*.txt
+*_cookies.txt
+xcookies.txt
+tiktok_cookies.txt
+genius.com_cookies.txt
+twitter_state.json
+
+# Deployment artifacts slated for removal
+Dockerfile
+docker-compose.yml
+kompose/
+nginx/
+
+# Misc
+*.bak
+*.swp
+*.swo

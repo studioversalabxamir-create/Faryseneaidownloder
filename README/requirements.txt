@@ -1,0 +1,41 @@
+# Core dependencies for Farysene AI Telegram Bot
+aiogram>=3.3.0
+requests>=2.31.0
+APScheduler>=3.10.4
+pytz>=2024.1
+python-dotenv>=1.0.1
+filelock>=3.12.2
+httpx>=0.27.0
+aiohttp>=3.9.5
+
+# Media processing
+ffmpeg-python>=0.2.0
+mutagen>=1.46.0
+pydub>=0.25.1
+pillow>=10.3.0
+python-magic>=0.4.27
+
+# Downloaders / scrapers
+yt-dlp>=2024.10.22
+cloudscraper>=1.2.71
+beautifulsoup4>=4.12.3
+fake-useragent>=2.1.0
+
+# Platform SDKs and helpers (used across handlers)
+spotipy>=2.25.1
+spotdl>=4.4.2
+lyricsgenius>=3.0.1
+instaloader>=4.14.1
+tiktok-downloader>=0.3.5
+snscrape>=0.7.0.20230622
+soundcloudpy>=0.1.3
+scdl>=3.0.0
+youtube-search-python>=1.6.6
+
+# Optional PDFs/Reports (keep if referenced in handlers)
+reportlab>=4.2.2
+fpdf>=1.7.2
+
+# NOTE:
+# - Webhook/Flask and python-telegram-bot were removed; we use aiogram (polling).
+# - Postgres driver removed for now; SQLite is default. Add psycopg2-binary if moving to Postgres.
