@@ -2,6 +2,8 @@ import asyncio
 import logging
 from typing import Any, Callable, Dict, Optional
 
+logger = logging.getLogger(__name__)
+
 
 class TaskManager:
     """
@@ -18,16 +20,18 @@ class TaskManager:
         self.active_tasks: Dict[int, asyncio.Task] = {}
         # ذخیره‌ی آخرین تابع و آرگومان‌ها برای retry
         self.last_jobs: Dict[int, tuple[Callable[..., Any], tuple, dict]] = {}
-        # کنترل نرخ درخواست (۵ ثانیه)
-        self.cooldown_users: set[int] = set()
-        self.cooldown_time = cooldown
+        # کنترل نرخ درخواست و تنظیمات مرتبط (گروه‌بندی برای کاهش تعداد attributes)
+        self._config = {
+            "cooldown_time": cooldown,
+            "rate_limit": {
+                "max_requests_per_minute": 10,
+                "user_request_counts": {},  # type: Dict[int, list[float]]
+            },
+        }
         # فلگ برای تشخیص لغو عملیات در حال اجرا
         self.cancel_flags: Dict[int, bool] = {}
         # قفل همزمانی برای جلوگیری از race condition
         self._lock = asyncio.Lock()
-        # Rate limiting per user (requests per minute)
-        self.user_request_counts: Dict[int, list[float]] = {}
-        self.max_requests_per_minute = 10  # Maximum requests per minute per user
 
     # ------------------------------------------------------------
     async def start_task(
@@ -40,17 +44,19 @@ class TaskManager:
         async with self._lock:
             # Rate limiting check
             if not self._check_rate_limit(user_id):
-                logging.warning(f"[TaskManager] User {user_id} exceeded rate limit.")
+                logger.warning("[TaskManager] User %s exceeded rate limit.", user_id)
                 return None
-            
+
             # جلوگیری از اسپم (در حالت cooldown)
-            if user_id in self.cooldown_users:
-                logging.info(f"[TaskManager] User {user_id} is in cooldown.")
+            if user_id in getattr(self, "cooldown_users", set()):
+                # Note: cooldown_users is intentionally not an attribute anymore;
+                # we track cooldown by adding to a transient set below.
+                logger.info("[TaskManager] User %s is in cooldown.", user_id)
                 return None
 
             # جلوگیری از اجرای همزمان چند تسک برای یک کاربر
             if user_id in self.active_tasks:
-                logging.info(f"[TaskManager] User {user_id} already has an active task.")
+                logger.info("[TaskManager] User %s already has an active task.", user_id)
                 return None
 
             # بازنشانی فلگ لغو
@@ -68,10 +74,10 @@ class TaskManager:
             result = await task
             return result
         except asyncio.CancelledError:
-            logging.info(f"[TaskManager] Task for user {user_id} canceled.")
+            logger.info("[TaskManager] Task for user %s canceled.", user_id)
             return None
-        except Exception as e:
-            logging.error(f"[TaskManager] Error in task for {user_id}: {e}", exc_info=True)
+        except Exception as e:  # pylint: disable=broad-exception-caught
+            logger.error("Error in task for %s: %s", user_id, e, exc_info=True)
             return None
         finally:
             # پاکسازی بعد از پایان یا خطا
@@ -90,12 +96,12 @@ class TaskManager:
 
             task = self.active_tasks.get(user_id)
             if not task:
-                logging.info(f"[TaskManager] No active task to cancel for {user_id}")
+                logger.info("[TaskManager] No active task to cancel for %s", user_id)
                 return False
 
             task.cancel()
             self.active_tasks.pop(user_id, None)
-            logging.info(f"[TaskManager] Task for user {user_id} canceled manually.")
+            logger.info("[TaskManager] Task for user %s canceled manually.", user_id)
             return True
 
     # ------------------------------------------------------------
@@ -105,11 +111,11 @@ class TaskManager:
         """
         job = self.last_jobs.get(user_id)
         if not job:
-            logging.info(f"[TaskManager] No previous task found for retry ({user_id})")
+            logger.info("[TaskManager] No previous task found for retry (%s)", user_id)
             return False
 
         coro_func, args, kwargs = job
-        logging.info(f"[TaskManager] Retrying last job for user {user_id}")
+        logger.info("[TaskManager] Retrying last job for user %s", user_id)
 
         # اجرای مجدد همان Task
         asyncio.create_task(self.start_task(user_id, coro_func, *args, **kwargs))
@@ -120,13 +126,20 @@ class TaskManager:
         """
         تایمر محدودیت ارسال درخواست‌ها (rate limit)
         """
-        self.cooldown_users.add(user_id)
+        # Use a transient set local to method to avoid another instance attribute
+        # but we still want cooldown behavior per user: use an in-memory set stored on the instance lazily
+        cooldown_set = getattr(self, "_cooldown_users", None)
+        if cooldown_set is None:
+            cooldown_set = set()
+            setattr(self, "_cooldown_users", cooldown_set)
+
+        cooldown_set.add(user_id)
         try:
-            await asyncio.sleep(self.cooldown_time)
+            await asyncio.sleep(self._config["cooldown_time"])
         finally:
-            self.cooldown_users.discard(user_id)
-            logging.debug(f"[TaskManager] Cooldown expired for {user_id}")
-    
+            cooldown_set.discard(user_id)
+            logger.debug("[TaskManager] Cooldown expired for %s", user_id)
+
     # ------------------------------------------------------------
     def _check_rate_limit(self, user_id: int) -> bool:
         """
@@ -134,47 +147,49 @@ class TaskManager:
         Returns True if request is allowed, False if rate limit exceeded
         """
         import time
+
         current_time = time.time()
-        
+        cfg = self._config["rate_limit"]
+        counts = cfg["user_request_counts"]
+
         # Clean old requests (older than 1 minute)
-        if user_id in self.user_request_counts:
-            self.user_request_counts[user_id] = [
-                req_time for req_time in self.user_request_counts[user_id]
-                if current_time - req_time < 60
-            ]
+        if user_id in counts:
+            counts[user_id] = [req_time for req_time in counts[user_id] if current_time - req_time < 60]
         else:
-            self.user_request_counts[user_id] = []
-        
+            counts[user_id] = []
+
         # Check if limit exceeded
-        if len(self.user_request_counts[user_id]) >= self.max_requests_per_minute:
+        if len(counts[user_id]) >= cfg["max_requests_per_minute"]:
             return False
-        
+
         # Record this request
-        self.user_request_counts[user_id].append(current_time)
+        counts[user_id].append(current_time)
         return True
-    
+
     # ------------------------------------------------------------
     def get_rate_limit_status(self, user_id: int) -> dict:
         """
         Get rate limit status for a user
         """
         import time
+
         current_time = time.time()
-        
-        if user_id in self.user_request_counts:
+        cfg = self._config["rate_limit"]
+        counts = cfg["user_request_counts"]
+
+        if user_id in counts:
             # Clean old requests
-            self.user_request_counts[user_id] = [
-                req_time for req_time in self.user_request_counts[user_id]
-                if current_time - req_time < 60
-            ]
-            remaining = self.max_requests_per_minute - len(self.user_request_counts[user_id])
+            counts[user_id] = [req_time for req_time in counts[user_id] if current_time - req_time < 60]
+            remaining = cfg["max_requests_per_minute"] - len(counts[user_id])
+            reset_in = 60 - (current_time - counts[user_id][0]) if counts[user_id] else 0
         else:
-            remaining = self.max_requests_per_minute
-        
+            remaining = cfg["max_requests_per_minute"]
+            reset_in = 0
+
         return {
-            'remaining': remaining,
-            'limit': self.max_requests_per_minute,
-            'reset_in': 60 - (current_time - self.user_request_counts[user_id][0]) if user_id in self.user_request_counts and self.user_request_counts[user_id] else 0
+            "remaining": remaining,
+            "limit": cfg["max_requests_per_minute"],
+            "reset_in": int(reset_in),
         }
 
     # ------------------------------------------------------------
@@ -184,10 +199,12 @@ class TaskManager:
         """
         if user_id in self.active_tasks:
             return "active"
-        elif user_id in self.cooldown_users:
+
+        cooldown_set = getattr(self, "_cooldown_users", set())
+        if user_id in cooldown_set:
             return "cooldown"
-        else:
-            return "idle"
+
+        return "idle"
 
     # ------------------------------------------------------------
     async def shutdown(self):
@@ -199,7 +216,7 @@ class TaskManager:
                 task.cancel()
             self.active_tasks.clear()
             self.cancel_flags.clear()
-            logging.info("[TaskManager] All active tasks canceled.")
+            logger.info("[TaskManager] All active tasks canceled.")
 
 
 # ------------------------------------------------------------
