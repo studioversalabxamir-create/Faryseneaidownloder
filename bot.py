@@ -35,24 +35,21 @@ import config
 from handlers import detector
 from handlers import tiktok, pinterest, youtube, spotify, instagram, twitter, threads
 
-# اگر نیاز به دسترسی مستقیم به یک هندلر دارید (مثلاً برای fallback فوری)
 from handlers.youtube import youtube_download_handler
 from handlers.spotify import spotify_download_handler
-#from handlers.soundcloud import soundcloud_download_handler
+from handlers.soundcloud import soundcloud_download_handler
 from handlers.pinterest import pinterest_download_handler, handle_multiple_pinterest_links
 from handlers.twitter import twitter_download_handler
 from handlers.threads import threads_download_handler
 from handlers.tiktok import tiktok_download_handler
 from handlers.instagram import instagram_download_handler
 
-# روترهای جدا (هر فایل handlers باید متغیر `router` را صادر کند)
 from handlers.tiktok import router as tiktok_router
 from handlers.twitter import router as twitter_router
 from handlers.threads import router as threads_router
 from handlers.instagram import router as instagram_router
 
 
-# توابع کمکی
 from handlers.detector import detect_platform
 
 
@@ -240,22 +237,16 @@ async def detect_all_links(message: Message):
 
 # --- تابع اصلی ---
 async def main():
-    # تنظیم مسیر ffmpeg برای ماژول‌هایی که از آن استفاده می‌کنند (در صورت لزوم)
-    # Use environment variable if set, otherwise use config default
     ffmpeg_path = os.getenv("FFMPEG_PATH") or config.FFMPEG_PATH
     if ffmpeg_path and ffmpeg_path != "ffmpeg":
         os.environ["FFMPEG_PATH"] = ffmpeg_path
 
-    # تنظیم پراکسی از config
     proxy_url = PROXY
 
-    # تنظیم ویژگی‌های بات
     bot_properties = DefaultBotProperties(parse_mode=ParseMode.HTML)
 
-    # ساخت بات با پراکسی و default_bot_properties
     bot = Bot(token=BOT_TOKEN, proxy=proxy_url, default_bot_properties=bot_properties)
 
-    # حافظه FSM و دیسپچر
     storage = MemoryStorage()
     dp = Dispatcher(storage=storage)
     
@@ -333,7 +324,7 @@ async def main():
            await message.answer("The bot is in development. Access is limited.")
            return
         await message.answer(
-           "🎧 این بخش در حال توسعه می‌باشد.\n"
+           "🎧This section is under development..\n"
            "🎧 This section is currently under development."
         )
     
@@ -353,7 +344,7 @@ async def main():
             )
             return
         
-        history_text = "📜 تاریخچه دانلود شما:\n📜 Your Download History:\n\n"
+        history_text = "📜 Your download history:\n📜 Your Download History:\n\n"
         for i, item in enumerate(history, 1):
             platform = item[0]
             url = item[1]
@@ -486,7 +477,7 @@ async def main():
 
     # --- اضافه کردن روترها ---
     dp.include_router(main_router)
-    dp.include_router(router)            # روتر شناسایی لینک‌ها (اصلی)
+    dp.include_router(router)            
     dp.include_router(youtube.router)
     dp.include_router(spotify.router)
     # dp.include_router(soundcloud.router)  # Disabled until dependencies are ready
